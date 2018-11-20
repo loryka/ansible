@@ -282,6 +282,16 @@ options:
       - Ignores all other parameters.
     choices: [ ACCEPT, DROP, QUEUE, RETURN ]
     version_added: "2.2"
+  log_prefix:
+    version_added: "2.7"
+    description:
+      - "Prefix log messages with the specified prefix; up to 29 letters
+      long, and useful for distinguishing messages in the logs."
+  log_level:
+    version_added: "2.7"
+    description:
+      - "Logging level according to the syslogd-defined priorities. These
+      can be strings or numbers from 1-8."
 '''
 
 EXAMPLES = '''
@@ -383,6 +393,16 @@ EXAMPLES = '''
     chain: "{{ item }}"
     flush: yes
   with_items: [ 'INPUT', 'OUTPUT', 'PREROUTING', 'POSTROUTING' ]
+
+# Log packets arriving into an user-defined chain
+- iptables:
+    chain: LOGGING
+    action: append
+    state: present
+    limit: 2/second
+    limit_burst: 20
+    log_prefix: "IPTABLES:INFO: "
+    log_level: info
 '''
 
 import re
@@ -450,6 +470,7 @@ def construct_rule(params):
     append_tcp_flags(rule, params['tcp_flags'], '--tcp-flags')
     append_param(rule, params['jump'], '-j', False)
     append_param(rule, params['log_prefix'], '--log-prefix', False)
+    append_param(rule, params['log_level'], '--log-level', False)
     append_param(rule, params['to_destination'], '--to-destination', False)
     append_param(rule, params['to_source'], '--to-source', False)
     append_param(rule, params['goto'], '-g', False)
@@ -569,6 +590,7 @@ def main():
                            ),
             jump=dict(type='str'),
             log_prefix=dict(type='str'),
+            log_level=dict(type='str'),
             goto=dict(type='str'),
             in_interface=dict(type='str'),
             out_interface=dict(type='str'),
@@ -618,6 +640,13 @@ def main():
         args['changed'] = True
         if not module.check_mode:
             flush_table(iptables_path, module, module.params)
+
+    # The log_prefix and log_level options can only be used if the jump target is LOG
+    if module.params['log_prefix'] or module.params['log_level']:
+        if module.params['jump'] is None:
+            module.params['jump'] = 'LOG'
+        elif module.params['jump'] != 'LOG':
+            module.fail_json(msg="Logging options can only be used with the LOG jump target.")
 
     # Set the policy
     elif module.params['policy']:
